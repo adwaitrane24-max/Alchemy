@@ -52,6 +52,9 @@ dev = [
 alchemy = "frontend.cli.app:app"
 alchemy-admin = "backend.app.cli.main:app"
 
+[tool.hatch.build.targets.wheel]
+packages = ["backend", "frontend"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 100

@@ -217,11 +217,17 @@ class InteractiveSession:
             )
         )
 
+        # Update budget manager with the cost BEFORE displaying
+        budget_warning = self._budget_manager.update(response.cost_usd)
+
+        # Update usage service
+        self._usage_service.update_total_cost(response.cost_usd)
+
         # Update metrics if we have response data
         if response.latency_ms and response.model:
             self._model_metrics.update(response.model.value, response.latency_ms)
 
-        # Display budget summary
+        # Display budget summary with UPDATED values
         if response.model:
             budget_text = Text()
             budget_text.append("Budget Summary\n", style="bold")
@@ -234,6 +240,24 @@ class InteractiveSession:
             budget_text.append(f"Economic Mode  {'ON' if self._budget_manager.economic_mode else 'OFF'}\n")
 
             self._console.print(Panel(budget_text, border_style="cyan", padding=(0, 2)))
+
+        # Display budget warning if threshold crossed
+        if budget_warning:
+            if budget_warning.level == "warning":
+                self._console.print(f"\n[yellow]{budget_warning.message}[/yellow]")
+                enable_eco = Prompt.ask(
+                    "Would you like to switch to Economic Mode?",
+                    choices=["Y", "N"],
+                    default="N",
+                    console=self._console,
+                )
+                if enable_eco.upper() == "Y":
+                    self._budget_manager.enable_economic_mode()
+                    self._console.print("[green]Economic Mode Enabled[/green]\n")
+            elif budget_warning.level == "critical":
+                self._console.print(f"\n[red bold]{budget_warning.message}[/red bold]\n")
+            elif budget_warning.level == "exhausted":
+                self._console.print(f"\n[red bold]{budget_warning.message}[/red bold]\n")
 
         self._dashboard.render(response, self._budget_snapshot())
 
