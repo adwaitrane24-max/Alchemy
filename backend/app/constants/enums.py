@@ -39,6 +39,12 @@ class TaskType(StrEnum):
     QA = "qa"
     CREATIVE = "creative"
     GENERAL = "general"
+    SUMMARIZATION = "summarization"
+    EXTRACTION = "extraction"
+    EMBEDDING = "embedding"
+    MATH = "math"
+    CONVERSATION = "conversation"
+    CLASSIFICATION = "classification"
 
 
 class FastRequestCategory(StrEnum):

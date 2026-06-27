@@ -1,7 +1,8 @@
-"""Rule-based routing engine with weighted decision score.
+"""Capability-aware routing engine powered by Mozilla Otari model registry.
 
 Combines security, fast-detector, task analysis, and budget state into
-an explainable routing decision with transparent scoring.
+an explainable routing decision. Model selection is driven by the
+:class:`ModelRegistry` — no hardcoded if-else chains.
 """
 
 from __future__ import annotations
@@ -11,8 +12,6 @@ from loguru import logger
 from backend.app.constants.enums import BudgetState, RoutingAction
 from backend.app.constants.models import MODEL_COSTS, MODEL_FALLBACK_CHAIN, ModelID
 from backend.app.constants.thresholds import (
-    SCORE_BAND_LOW,
-    SCORE_BAND_MID,
     SCORE_CONTEXT_TOKEN_THRESHOLD,
     SCORE_WEIGHT_BUDGET,
     SCORE_WEIGHT_CAPABILITY,
@@ -28,12 +27,16 @@ from backend.app.models.analysis import (
 from backend.app.models.budget import BudgetSnapshot
 from backend.app.models.routing import RoutingDecision
 from backend.app.models.scoring import ScoreBreakdown
+from backend.app.routing.registry import ModelRegistry
 
 _ESTIMATED_COMPLETION_TOKENS = 256
 
 
 class RoutingEngine:
-    """Selects the most appropriate model via weighted decision score."""
+    """Selects the best Mozilla Otari model via capability-aware registry."""
+
+    def __init__(self, registry: ModelRegistry | None = None) -> None:
+        self._registry = registry or ModelRegistry()
 
     def decide(
         self,
@@ -48,8 +51,8 @@ class RoutingEngine:
     ) -> RoutingDecision:
         """Produce a routing decision from upstream pipeline signals.
 
-        Precedence: security block → override → fast-path → budget-constrained →
-        decision score engine.
+        Precedence: security block → override → fast-path → budget-critical →
+        registry-driven capability matching.
         """
         # 1. Security always wins.
         if security.is_blocked:
@@ -66,34 +69,60 @@ class RoutingEngine:
                 return self._model_call(model, prompt_tokens, f"Caller override → {model.value}")
             logger.warning("Unknown model_override '{}', ignoring", model_override)
 
-        # 3. Fast path → cheapest Groq model.
+        # 3. Fast path → cheapest model.
         if fast_detector is not None and fast_detector.is_fast_path:
+            fast_model = self._registry.get_fast_path_model()
             return self._model_call(
-                ModelID.GROQ_LLAMA2_13B,
+                fast_model,
                 prompt_tokens,
-                f"Fast path ({fast_detector.reason}) → Groq LLaMA 2 13B",
+                f"Fast path ({fast_detector.reason}) → {fast_model.value}",
             )
 
         # 4. Budget exhausted → force cheapest.
         if budget.state is BudgetState.CRITICAL or budget.remaining_usd <= 0.0:
+            cheapest = self._registry.get_cheapest()
             return self._model_call(
-                ModelID.GROQ_LLAMA2_13B,
+                cheapest,
                 prompt_tokens,
-                f"Budget {budget.state.value} → force Groq LLaMA 2 13B",
+                f"Budget {budget.state.value} → force {cheapest.value}",
             )
 
-        # 5. Decision score engine.
+        # 5. No analysis → safe default.
         if analysis is None:
+            default = self._registry.get_default()
             return self._model_call(
-                ModelID.GROQ_MIXTRAL,
+                default,
                 prompt_tokens,
-                "No analysis available → balanced Mixtral",
+                f"No analysis available → default {default.value}",
             )
 
-        model, reason, breakdown = self._select_by_score(
+        # 6. Registry-driven capability-aware selection.
+        model, reason, breakdown = self._select_via_registry(
             analysis, budget, prompt_tokens, economic_mode
         )
         return self._model_call(model, prompt_tokens, reason, score_breakdown=breakdown)
+
+    def _select_via_registry(
+        self,
+        analysis: PromptAnalysis,
+        budget: BudgetSnapshot,
+        prompt_tokens: int,
+        economic_mode: bool,
+    ) -> tuple[ModelID, str, ScoreBreakdown]:
+        """Use the capability registry to pick the best Mozilla model."""
+        breakdown = self._compute_score(analysis, budget, prompt_tokens, economic_mode)
+
+        selected, registry_reason = self._registry.select(
+            task_type=analysis.task_type,
+            complexity=analysis.complexity,
+            budget_state=budget.state,
+            needs_coding=analysis.needs_coding,
+            needs_reasoning=analysis.needs_reasoning,
+            prefer_low_latency=economic_mode,
+        )
+
+        combined_reason = f"{breakdown.explain()} | {registry_reason}"
+        return selected, combined_reason, breakdown
 
     def _compute_score(
         self,
@@ -102,6 +131,7 @@ class RoutingEngine:
         prompt_tokens: int,
         economic_mode: bool,
     ) -> ScoreBreakdown:
+        """Compute the explainability score (unchanged from existing logic)."""
         complexity_score = round(analysis.complexity * SCORE_WEIGHT_COMPLEXITY, 2)
 
         capability_score = 0.0
@@ -149,28 +179,6 @@ class RoutingEngine:
             hard_gate=hard_gate,
         )
 
-    def _select_by_score(
-        self,
-        analysis: PromptAnalysis,
-        budget: BudgetSnapshot,
-        prompt_tokens: int,
-        economic_mode: bool,
-    ) -> tuple[ModelID, str, ScoreBreakdown]:
-        breakdown = self._compute_score(analysis, budget, prompt_tokens, economic_mode)
-
-        if breakdown.hard_gate == "vision_unsupported":
-            logger.warning("Vision required but Groq doesn't support it, using Mixtral")
-            return ModelID.GROQ_MIXTRAL, breakdown.explain(), breakdown
-
-        if breakdown.total_score <= SCORE_BAND_LOW:
-            model = ModelID.GROQ_LLAMA2_13B
-        elif breakdown.total_score <= SCORE_BAND_MID:
-            model = ModelID.GROQ_MIXTRAL
-        else:
-            model = ModelID.GROQ_LLAMA2_70B
-
-        return model, breakdown.explain(), breakdown
-
     def _model_call(
         self,
         model: ModelID,
@@ -200,13 +208,30 @@ class RoutingEngine:
     @staticmethod
     def _coerce_model(value: str) -> ModelID | None:
         aliases = {
+            # Mozilla Otari
+            "gemma": ModelID.GEMMA_3_27B,
+            "gemma_27b": ModelID.GEMMA_3_27B,
+            "gemma-3-27b": ModelID.GEMMA_3_27B,
+            "llama": ModelID.LLAMA_3_3_70B,
+            "llama_70b": ModelID.LLAMA_3_3_70B,
+            "llama-3.3-70b": ModelID.LLAMA_3_3_70B,
+            "qwen": ModelID.QWEN3_32B,
+            "qwen_32b": ModelID.QWEN3_32B,
+            "qwen3-32b": ModelID.QWEN3_32B,
+            "hermes": ModelID.HERMES_4_70B,
+            "hermes_70b": ModelID.HERMES_4_70B,
+            "hermes-4-70b": ModelID.HERMES_4_70B,
+            "qwen_embedding": ModelID.QWEN3_EMBEDDING_8B,
+            "embedding": ModelID.QWEN3_EMBEDDING_8B,
+            # Groq (budget fallback)
             "groq_13b": ModelID.GROQ_LLAMA2_13B,
             "groq_mixtral": ModelID.GROQ_MIXTRAL,
             "groq_70b": ModelID.GROQ_LLAMA2_70B,
             "mixtral": ModelID.GROQ_MIXTRAL,
             "llama2_13b": ModelID.GROQ_LLAMA2_13B,
             "llama2_70b": ModelID.GROQ_LLAMA2_70B,
-            "local": ModelID.GROQ_LLAMA2_13B,
+            # Legacy
+            "local": ModelID.GEMMA_3_27B,
             "local_2b": ModelID.LOCAL_2B,
             "mini": ModelID.GPT4O_MINI,
             "gpt4o_mini": ModelID.GPT4O_MINI,

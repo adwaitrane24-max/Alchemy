@@ -31,7 +31,7 @@ def test_fast_path_request(pipeline: AlchemyPipeline) -> None:
     assert response.blocked is False
     assert response.fast_detector is not None
     assert response.fast_detector.is_fast_path is True
-    assert response.model is ModelID.GROQ_LLAMA2_13B
+    assert response.model is ModelID.GEMMA_3_27B
     assert response.text
 
 
