@@ -14,7 +14,9 @@ app = typer.Typer(
 @app.command()
 def chat(
     voice: bool = typer.Option(False, "--voice", "-v", help="Enable voice input via Smallest.ai"),
-    model: str | None = typer.Option(None, "--model", "-m", help="Override model selection [local|mini|gpt4o]"),
+    model: str | None = typer.Option(
+        None, "--model", "-m", help="Override model selection [local|mini|gpt4o]"
+    ),
 ) -> None:
     """Start an interactive chat session with Alchemy."""
     # Implementation in Milestone 5

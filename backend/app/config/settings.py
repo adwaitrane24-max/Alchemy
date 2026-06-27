@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_VALID_LOG_LEVELS: frozenset[str] = frozenset(
+    {"TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"}
+)
+
+# A normalized ratio in the inclusive range [0, 1] (e.g. budget/cache thresholds).
+Ratio = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
 class Settings(BaseSettings):
@@ -43,13 +53,13 @@ class Settings(BaseSettings):
     smallest_ai_base_url: str = ""
 
     # ── Budget ───────────────────────────────────
-    budget_daily_limit_usd: float = 5.00
-    budget_warning_threshold: float = 0.60
-    budget_critical_threshold: float = 0.85
+    budget_daily_limit_usd: Annotated[float, Field(gt=0.0)] = 5.00
+    budget_warning_threshold: Ratio = 0.60
+    budget_critical_threshold: Ratio = 0.85
 
     # ── Semantic Cache ───────────────────────────
-    cache_similarity_threshold: float = 0.85
-    cache_default_ttl_hours: int = 168
+    cache_similarity_threshold: Ratio = 0.85
+    cache_default_ttl_hours: Annotated[int, Field(gt=0)] = 168
     embedding_model: str = "all-MiniLM-L6-v2"
 
     # ── Database ─────────────────────────────────
@@ -64,10 +74,45 @@ class Settings(BaseSettings):
     context_max_chunks_low: int = 3
     context_summary_max_tokens: int = 200
 
+    @field_validator("alchemy_log_level", mode="before")
+    @classmethod
+    def _normalize_log_level(cls, value: str) -> str:
+        """Uppercase and validate the log level against Loguru's known levels."""
+        normalized = str(value).strip().upper()
+        if normalized not in _VALID_LOG_LEVELS:
+            valid = ", ".join(sorted(_VALID_LOG_LEVELS))
+            raise ValueError(f"Invalid log level {value!r}. Must be one of: {valid}")
+        return normalized
+
+    @field_validator("alchemy_env", mode="before")
+    @classmethod
+    def _normalize_env(cls, value: str) -> str:
+        """Lowercase the environment name for stable comparisons."""
+        return str(value).strip().lower()
+
     @property
     def is_production(self) -> bool:
+        """True when running under the production environment."""
         return self.alchemy_env == "production"
 
     @property
     def is_debug(self) -> bool:
+        """True when debug mode is enabled."""
         return self.alchemy_debug
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return the process-wide cached :class:`Settings` instance.
+
+    This is the single dependency-injection entry point for configuration.
+    Modules should depend on this accessor rather than constructing
+    :class:`Settings` directly, so that the ``.env`` file is read only once.
+
+    In tests, call ``get_settings.cache_clear()`` to force a reload after
+    mutating environment variables.
+
+    Returns:
+        The cached, validated application settings.
+    """
+    return Settings()
