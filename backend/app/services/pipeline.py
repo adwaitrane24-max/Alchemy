@@ -1,51 +1,50 @@
-"""Pipeline orchestrator.
+"""Pipeline orchestrator — thin compatibility wrapper.
 
-Coordinates the end-to-end request flow:
-
-    fast detector → security → cache lookup → task analyzer → routing → response
-
-Each stage communicates exclusively through the shared models.
+Delegates all execution to the stateful :class:`PipelineOrchestrator` while
+preserving the original ``AlchemyPipeline`` API so existing CLI code,
+integration tests, and session imports continue to work unchanged.
 """
 
 from __future__ import annotations
 
-import time
+from typing import Any
 
 from loguru import logger
 
+from backend.app.budget.budget_manager import BudgetManager
 from backend.app.config.settings import Settings, get_settings
-from backend.app.constants.enums import RoutingAction
-from backend.app.constants.models import ModelID
 from backend.app.gateway.mock import MockResponseEngine
-from backend.app.models.analysis import (
-    FastDetectorResult,
-    PromptAnalysis,
-    SecurityResult,
-)
-from backend.app.models.budget import BudgetSnapshot
 from backend.app.models.request import PromptRequest
 from backend.app.models.response import PromptResponse
-from backend.app.models.routing import RoutingDecision
 from backend.app.modules.cache import SemanticCache
 from backend.app.modules.fast_detector import FastRequestDetector
 from backend.app.modules.task_analyzer import TaskAnalyzer
+from backend.app.pipeline.checkpoint_manager import CheckpointManager
+from backend.app.pipeline.event_dispatcher import EventDispatcher, PipelineEvent
+from backend.app.pipeline.orchestrator import PipelineOrchestrator
+from backend.app.pipeline.retry_manager import RetryManager
 from backend.app.routing import RoutingEngine
 from backend.app.security import SecurityScanner
 
-# Rough token estimate (~4 chars/token) used for routing cost projection.
-_CHARS_PER_TOKEN = 4
 
+def _make_debug_logger() -> EventDispatcher:
+    """Create an EventDispatcher that logs every event at DEBUG level."""
+    dispatcher = EventDispatcher()
 
-def _estimate_tokens(text: str) -> int:
-    """Estimate token count for routing decisions."""
-    return max(1, len(text) // _CHARS_PER_TOKEN)
+    def _log_event(event: PipelineEvent, data: dict[str, Any]) -> None:
+        logger.debug("[pipeline-event] {} {}", event.value, data)
+
+    for evt in PipelineEvent:
+        dispatcher.subscribe(evt, _log_event)
+
+    return dispatcher
 
 
 class AlchemyPipeline:
-    """Runs a :class:`PromptRequest` through every gateway stage.
+    """Backward-compatible wrapper around :class:`PipelineOrchestrator`.
 
-    Dependencies are injected so each can be swapped (e.g. real gateway in place
-    of the mock) without changing the orchestration logic.
+    Accepts the same constructor arguments as the original implementation.
+    Callers (CLI, tests) see no API change.
     """
 
     def __init__(
@@ -58,196 +57,34 @@ class AlchemyPipeline:
         router: RoutingEngine | None = None,
         responder: MockResponseEngine | None = None,
         cache: SemanticCache | None = None,
+        budget_manager: BudgetManager | None = None,
+        checkpoint_manager: CheckpointManager | None = None,
+        retry_manager: RetryManager | None = None,
+        dispatcher: EventDispatcher | None = None,
     ) -> None:
-        self._settings = settings or get_settings()
-        self._fast_detector = fast_detector or FastRequestDetector()
-        self._security = security or SecurityScanner(
-            log_blocked=self._settings.security_log_blocked
-        )
-        self._task_analyzer = task_analyzer or TaskAnalyzer()
-        self._router = router or RoutingEngine()
-        self._responder = responder or MockResponseEngine()
-        self._cache = cache or SemanticCache(settings=self._settings)
+        resolved_settings = settings or get_settings()
+        resolved_dispatcher = dispatcher or _make_debug_logger()
 
-    def _budget_snapshot(self) -> BudgetSnapshot:
-        """Build a static budget snapshot from settings.
-
-        Real spend tracking is a later milestone; for now spend is zero so the
-        budget state is HEALTHY.
-        """
-        return BudgetSnapshot(
-            daily_limit_usd=self._settings.budget_daily_limit_usd,
-            spent_usd=0.0,
-            warning_threshold=self._settings.budget_warning_threshold,
-            critical_threshold=self._settings.budget_critical_threshold,
+        self._orchestrator = PipelineOrchestrator(
+            settings=resolved_settings,
+            fast_detector=fast_detector,
+            security=security,
+            task_analyzer=task_analyzer,
+            router=router,
+            responder=responder,
+            cache=cache,
+            budget_manager=budget_manager,
+            checkpoint_manager=checkpoint_manager or CheckpointManager(
+                dispatcher=resolved_dispatcher
+            ),
+            retry_manager=retry_manager,
+            dispatcher=resolved_dispatcher,
         )
 
     def process(self, request: PromptRequest) -> PromptResponse:
-        """Process a request end-to-end and return a populated response.
+        """Process a request end-to-end through the stateful pipeline."""
+        return self._orchestrator.process(request)
 
-        Args:
-            request: The inbound prompt request.
-
-        Returns:
-            A :class:`PromptResponse` carrying the answer plus the full decision
-            trace (detector, security, analysis, routing) and live metrics.
-        """
-        start = time.perf_counter()
-        logger.info("Processing request_id={} words={}", request.request_id, request.word_count)
-
-        prompt_tokens = _estimate_tokens(request.prompt)
-        budget = self._budget_snapshot()
-
-        # ── Stage 1: Security (highest priority gate) ──
-        security = self._security.scan(request)
-        if security.is_blocked:
-            routing = self._router.decide(security=security, analysis=None, budget=budget)
-            return self._finalize(
-                request,
-                text=f"⛔ Request blocked: {security.reason}",
-                start=start,
-                blocked=True,
-                security=security,
-                routing=routing,
-            )
-
-        # ── Stage 2: Fast request detector ──
-        fast = self._fast_detector.detect(request)
-        if fast.is_fast_path:
-            routing = self._router.decide(
-                security=security,
-                analysis=None,
-                budget=budget,
-                fast_detector=fast,
-                prompt_tokens=prompt_tokens,
-            )
-            text = fast.canned_response or "OK."
-            return self._finalize(
-                request,
-                text=text,
-                start=start,
-                security=security,
-                fast=fast,
-                routing=routing,
-                model=routing.model,
-            )
-
-        # ── Stage 3: Semantic cache lookup ──
-        cache_decision = self._cache.lookup(request.prompt)
-        if cache_decision.is_hit and cache_decision.entry is not None:
-            routing = RoutingDecision(
-                action=RoutingAction.CACHE_RETURN,
-                model=cache_decision.entry.model_used,
-                reason=(
-                    f"Cache HIT ({cache_decision.verification.explain()})"
-                    if cache_decision.verification
-                    else "Cache HIT"
-                ),
-            )
-            return self._finalize(
-                request,
-                text=cache_decision.entry.response_text,
-                start=start,
-                cached=True,
-                security=security,
-                fast=fast,
-                routing=routing,
-                model=cache_decision.entry.model_used,
-                cost_usd=0.0,
-            )
-
-        # ── Stage 4: Task analyzer ──
-        analysis = self._task_analyzer.analyze(request)
-
-        # ── Stage 5: Routing ──
-        routing = self._router.decide(
-            security=security,
-            analysis=analysis,
-            budget=budget,
-            fast_detector=fast,
-            prompt_tokens=prompt_tokens,
-            model_override=request.model_override,
-            economic_mode=False,
-        )
-
-        # ── Stage 6: Response generation (mock) ──
-        if routing.action is RoutingAction.MODEL_CALL and routing.model is not None:
-            result = self._responder.generate(request, routing.model, analysis)
-
-            # Store in cache for future lookups.
-            self._cache.store(
-                query=request.prompt,
-                response_text=result.text,
-                model_used=routing.model,
-                cost_usd=result.cost_usd,
-                latency_ms=result.latency_ms,
-            )
-
-            return self._finalize(
-                request,
-                text=result.text,
-                start=start,
-                security=security,
-                fast=fast,
-                analysis=analysis,
-                routing=routing,
-                model=routing.model,
-                cost_usd=result.cost_usd,
-                prompt_tokens=result.prompt_tokens,
-                completion_tokens=result.completion_tokens,
-            )
-
-        # Defensive fallback (should not occur for a CLEAR request).
-        return self._finalize(
-            request,
-            text="No model was available to serve this request.",
-            start=start,
-            security=security,
-            fast=fast,
-            analysis=analysis,
-            routing=routing,
-        )
-
-    def _finalize(
-        self,
-        request: PromptRequest,
-        *,
-        text: str,
-        start: float,
-        blocked: bool = False,
-        cached: bool = False,
-        security: SecurityResult | None = None,
-        fast: FastDetectorResult | None = None,
-        analysis: PromptAnalysis | None = None,
-        routing: RoutingDecision | None = None,
-        model: ModelID | None = None,
-        cost_usd: float = 0.0,
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0,
-    ) -> PromptResponse:
-        """Assemble the final response and stamp the measured latency."""
-        latency_ms = (time.perf_counter() - start) * 1000.0
-        response = PromptResponse(
-            request_id=request.request_id,
-            text=text,
-            model=model,
-            blocked=blocked,
-            cached=cached,
-            latency_ms=round(latency_ms, 3),
-            cost_usd=cost_usd,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            fast_detector=fast,
-            security=security,
-            analysis=analysis,
-            routing=routing,
-        )
-        logger.info(
-            "Completed request_id={} blocked={} model={} latency={}ms cost=${:.5f}",
-            request.request_id,
-            blocked,
-            model.value if model is not None else None,
-            response.latency_ms,
-            cost_usd,
-        )
-        return response
+    def resume(self, request_id: str, request: PromptRequest) -> PromptResponse:
+        """Resume a previously failed request from its last checkpoint."""
+        return self._orchestrator.resume(request_id, request)

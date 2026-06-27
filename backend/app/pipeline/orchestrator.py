@@ -20,6 +20,7 @@ from backend.app.gateway.mock import MockResponseEngine
 from backend.app.models.budget import BudgetSnapshot
 from backend.app.models.request import PromptRequest
 from backend.app.models.response import PromptResponse
+from backend.app.models.routing import RoutingDecision
 from backend.app.modules.cache import SemanticCache
 from backend.app.modules.fast_detector import FastRequestDetector
 from backend.app.modules.task_analyzer import TaskAnalyzer
@@ -294,15 +295,25 @@ class PipelineOrchestrator:
                 if context.fast_detector_result
                 else "OK."
             )
+            self._run_decision_engine(context)
+            context.response_model = (
+                context.routing_decision.model if context.routing_decision else None
+            )
             context.mark_terminated_early("fast_response")
         elif event == PipelineEvent.SECURITY_BLOCKED:
             reason = (
                 context.security_result.reason if context.security_result else "blocked"
             )
             context.response_text = f"⛔ Request blocked: {reason}"
+            self._run_decision_engine(context)
             context.mark_terminated_early("security_blocked")
         elif event == PipelineEvent.CACHE_HIT:
             context.response_text = context.cache_response_text
+            context.routing_decision = RoutingDecision(
+                action=RoutingAction.CACHE_RETURN,
+                model=context.cache_model_used,
+                reason="Cache HIT",
+            )
             context.mark_terminated_early("cache_hit")
 
         self._dispatcher.emit(event, {"request_id": context.request_id})
