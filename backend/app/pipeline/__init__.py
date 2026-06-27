@@ -8,6 +8,7 @@ from backend.app.pipeline.execution_trace import ExecutionTrace
 from backend.app.pipeline.retry_manager import RetryManager, RetryConfig, RetryStrategy
 from backend.app.pipeline.event_dispatcher import EventDispatcher, PipelineEvent
 from backend.app.pipeline.stage_status import StageStatus, StageName, StageRecord
+from backend.app.pipeline.pipeline_summary import PipelineSummary, build_summary, log_summary
 from backend.app.pipeline.exceptions import (
     PipelineError,
     StageExecutionError,
@@ -32,6 +33,9 @@ __all__ = [
     "StageStatus",
     "StageName",
     "StageRecord",
+    "PipelineSummary",
+    "build_summary",
+    "log_summary",
     "PipelineError",
     "StageExecutionError",
     "CheckpointError",

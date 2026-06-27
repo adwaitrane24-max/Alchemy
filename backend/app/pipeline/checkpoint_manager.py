@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import abc
-import json
-from typing import Any
+import itertools
+import time
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -46,6 +47,8 @@ class InMemoryCheckpointBackend(CheckpointBackend):
 class CheckpointManager:
     """Saves pipeline context after each successful stage."""
 
+    _id_counter = itertools.count(1)
+
     def __init__(
         self,
         backend: CheckpointBackend | None = None,
@@ -54,23 +57,43 @@ class CheckpointManager:
         self._backend = backend or InMemoryCheckpointBackend()
         self._dispatcher = dispatcher
 
-    def save_checkpoint(self, context: PipelineContext) -> None:
+    def save_checkpoint(self, context: PipelineContext) -> str:
+        """Save a checkpoint and return its ID.
+
+        Returns:
+            The generated checkpoint ID (e.g. ``CHK-0012``).
+        """
+        checkpoint_id = f"CHK-{next(self._id_counter):04d}"
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+
         try:
+            context.checkpoints_created += 1
             data = context.serialize()
             self._backend.save(context.request_id, data)
-            logger.debug(
-                "Checkpoint saved request_id={} stage={}",
-                context.request_id,
-                context.current_stage,
+
+            logger.info(
+                "Checkpoint created id={} stage={} timestamp={}",
+                checkpoint_id,
+                context.current_stage.value if context.current_stage else "unknown",
+                timestamp,
             )
             if self._dispatcher:
                 self._dispatcher.emit(
                     PipelineEvent.CHECKPOINT_CREATED,
-                    {"request_id": context.request_id, "stage": context.current_stage},
+                    {
+                        "checkpoint_id": checkpoint_id,
+                        "request_id": context.request_id,
+                        "stage": context.current_stage.value if context.current_stage else None,
+                        "timestamp": timestamp,
+                        "completed_stages": [s.value for s in context.completed_stages],
+                    },
                 )
+            return checkpoint_id
+
         except Exception as exc:
             raise CheckpointError(
-                f"Failed to save checkpoint: {exc}", stage=str(context.current_stage)
+                f"Failed to save checkpoint: {exc}",
+                stage=context.current_stage.value if context.current_stage else None,
             ) from exc
 
     def load_checkpoint(self, request_id: str) -> PipelineContext | None:

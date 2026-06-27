@@ -37,10 +37,12 @@ class PipelineContext(BaseModel):
     current_stage: StageName | None = None
     status: str = PipelineStatus.PENDING
     retry_count: int = 0
+    checkpoints_created: int = 0
 
-    # Timestamps
+    # Timestamps — wall-clock for serialization, perf_counter for latency
     started_at: float = Field(default_factory=time.time)
     completed_at: float | None = None
+    _perf_start: float | None = None
 
     # Stage results — each module writes only its own field
     fast_detector_result: FastDetectorResult | None = None
@@ -72,6 +74,13 @@ class PipelineContext(BaseModel):
     def completed_stages(self) -> list[StageName]:
         return self.execution_trace.completed_stages
 
+    @property
+    def termination_reason(self) -> str | None:
+        return self.metadata.get("early_termination_reason")
+
+    def start_timer(self) -> None:
+        self._perf_start = time.perf_counter()
+
     def mark_running(self, stage: StageName) -> None:
         self.current_stage = stage
         self.status = PipelineStatus.RUNNING
@@ -79,17 +88,32 @@ class PipelineContext(BaseModel):
     def mark_completed(self) -> None:
         self.status = PipelineStatus.COMPLETED
         self.completed_at = time.time()
+        self._stamp_perf_elapsed()
 
     def mark_failed(self, error: str) -> None:
         self.status = PipelineStatus.FAILED
         self.error = error
         self.completed_at = time.time()
+        self._stamp_perf_elapsed()
         self.metadata["terminal_error"] = error
 
     def mark_terminated_early(self, reason: str) -> None:
         self.status = PipelineStatus.TERMINATED_EARLY
         self.completed_at = time.time()
+        self._stamp_perf_elapsed()
         self.metadata["early_termination_reason"] = reason
+
+    def _stamp_perf_elapsed(self) -> None:
+        if self._perf_start is not None:
+            self.metadata["total_latency_ms"] = round(
+                (time.perf_counter() - self._perf_start) * 1000, 3
+            )
+
+    @property
+    def total_latency_ms(self) -> float:
+        if "total_latency_ms" in self.metadata:
+            return self.metadata["total_latency_ms"]
+        return self.elapsed_ms
 
     @property
     def elapsed_ms(self) -> float:

@@ -32,6 +32,7 @@ from backend.app.pipeline.event_dispatcher import EventDispatcher, PipelineEvent
 from backend.app.pipeline.exceptions import PipelineError, StageExecutionError
 from backend.app.pipeline.pipeline_context import PipelineContext, PipelineStatus
 from backend.app.pipeline.retry_manager import RetryManager
+from backend.app.pipeline.pipeline_summary import log_summary
 from backend.app.pipeline.stage_executor import StageExecutor
 from backend.app.pipeline.stage_status import StageName, StageStatus
 
@@ -124,6 +125,7 @@ class PipelineOrchestrator:
             model_override=request.model_override,
             economic_mode=self._budget_manager.economic_mode,
         )
+        context.start_timer()
         self._dispatcher.emit(
             PipelineEvent.PIPELINE_STARTED,
             {"request_id": context.request_id},
@@ -174,13 +176,14 @@ class PipelineOrchestrator:
 
             self._dispatcher.emit(
                 PipelineEvent.PIPELINE_COMPLETED,
-                {"request_id": context.request_id, "elapsed_ms": context.elapsed_ms},
+                {"request_id": context.request_id, "total_latency_ms": context.total_latency_ms},
             )
             logger.info(
-                "Pipeline completed request_id={} elapsed={:.2f}ms",
+                "Pipeline completed request_id={} total_latency={:.2f}ms",
                 context.request_id,
-                context.elapsed_ms,
+                context.total_latency_ms,
             )
+            log_summary(context)
             self._checkpoint_manager.delete_checkpoint(context.request_id)
 
         except StageExecutionError as exc:
@@ -434,7 +437,7 @@ class PipelineOrchestrator:
             model=context.response_model,
             blocked=blocked,
             cached=cached,
-            latency_ms=context.elapsed_ms,
+            latency_ms=context.total_latency_ms,
             cost_usd=context.response_cost_usd,
             prompt_tokens=context.response_prompt_tokens,
             completion_tokens=context.response_completion_tokens,
