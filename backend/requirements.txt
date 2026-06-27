@@ -1,0 +1,26 @@
+# Alchemy Backend — Production Dependencies
+# Prefer installing via: uv pip install -e ".[dev]"
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+typer>=0.15.0
+rich>=13.9.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+httpx>=0.28.0
+loguru>=0.7.3
+python-dotenv>=1.0.1
+sentence-transformers>=3.3.0
+faiss-cpu>=1.9.0
+aiosqlite>=0.20.0
+numpy>=1.26.0
+
+# Dev dependencies
+pytest>=8.3.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0
+pytest-mock>=3.14.0
+ruff>=0.8.0
+black>=24.10.0
+mypy>=1.13.0
+pre-commit>=4.0.0
