@@ -8,7 +8,7 @@ and forwards only the highest-scoring chunks to the Prompt Builder.
 from __future__ import annotations
 
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -44,7 +44,7 @@ class ContextRelevanceFilter:
         if not candidates:
             return []
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         ranked: list[RankedChunk] = []
 
         for chunk, similarity in candidates:

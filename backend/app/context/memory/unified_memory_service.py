@@ -6,7 +6,7 @@ The Context Manager interacts ONLY with this service. The underlying vector DB
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from loguru import logger
@@ -111,7 +111,7 @@ class UnifiedMemoryService:
 
         summary = SessionSummary(
             session_id=session_id,
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
             project_info=f"Session with {len(chunks)} exchanges",
             completed_work=f"Processed {len(user_texts)} user queries",
             topics_discussed=topics,

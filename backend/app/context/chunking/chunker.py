@@ -7,7 +7,7 @@ based on sentence boundaries and topic continuity rather than fixed message coun
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from loguru import logger
 
@@ -59,7 +59,7 @@ class SemanticChunker:
                 chunk_type=chunk_type,
                 speaker=speaker,
                 model_used=model_used,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             )
             logger.debug("Created single chunk: {} tokens", token_count)
             return [chunk]
@@ -82,7 +82,7 @@ class SemanticChunker:
                     chunk_type=chunk_type,
                     speaker=speaker,
                     model_used=model_used,
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(UTC).isoformat(),
                 ))
                 current_sentences = []
                 current_tokens = 0
@@ -100,7 +100,7 @@ class SemanticChunker:
                 chunk_type=chunk_type,
                 speaker=speaker,
                 model_used=model_used,
-                timestamp=datetime.utcnow().isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             ))
 
         logger.debug("Created {} chunks from {} tokens", len(chunks), token_count)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import uuid4
 
@@ -33,7 +33,7 @@ class SemanticChunk:
     session_id: str = ""
     text: str = ""
     embedding: list[float] = field(default_factory=list)
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     token_count: int = 0
     topic: str = ""
     summary: str = ""
@@ -66,7 +66,7 @@ class SemanticChunk:
             session_id=metadata.get("session_id", ""),
             text=metadata.get("text", ""),
             embedding=embedding or [],
-            timestamp=metadata.get("timestamp", datetime.utcnow().isoformat()),
+            timestamp=metadata.get("timestamp", datetime.now(UTC).isoformat()),
             token_count=metadata.get("token_count", 0),
             topic=metadata.get("topic", ""),
             summary=metadata.get("summary", ""),
@@ -93,7 +93,7 @@ class SessionSummary:
     """Structured summary of a completed session."""
 
     session_id: str = ""
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     project_info: str = ""
     completed_work: str = ""
     pending_work: str = ""
