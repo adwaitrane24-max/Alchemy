@@ -49,7 +49,8 @@ dev = [
 ]
 
 [project.scripts]
-alchemy = "backend.app.cli.main:app"
+alchemy = "frontend.cli.app:app"
+alchemy-admin = "backend.app.cli.main:app"
 
 [tool.ruff]
 target-version = "py312"
@@ -66,9 +67,12 @@ select = [
     "UP",   # pyupgrade
     "B",    # flake8-bugbear
     "SIM",  # flake8-simplify
-    "TCH",  # flake8-type-checking
     "RUF",  # ruff-specific rules
 ]
+# NOTE: flake8-type-checking (TCH/TC) is intentionally NOT enabled. This is a
+# Pydantic v2 + Typer codebase where model field and CLI parameter annotations
+# must be importable at runtime; moving those imports into TYPE_CHECKING blocks
+# would break model construction and CLI option parsing.
 ignore = [
     "E501",   # line too long (handled by black)
     "B008",   # do not perform function call in argument defaults
