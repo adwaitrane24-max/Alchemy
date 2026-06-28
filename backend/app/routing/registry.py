@@ -36,7 +36,7 @@ class ModelCapability:
 
 _OTARI_MODELS: tuple[ModelCapability, ...] = (
     ModelCapability(
-        model_id=ModelID.GEMMA_3_27B,
+        model_id=ModelID.LLAMA_3_1_8B,
         supported_tasks=frozenset(
             {
                 TaskType.GENERAL,
@@ -47,9 +47,9 @@ _OTARI_MODELS: tuple[ModelCapability, ...] = (
                 TaskType.PLANNING,
             }
         ),
-        max_complexity=0.55,
-        strengths=("general chat", "summarization", "classification", "lightweight"),
-        estimated_latency_ms=200,
+        max_complexity=0.50,
+        strengths=("general chat", "summarization", "classification", "lightweight", "fast"),
+        estimated_latency_ms=150,
         cost_tier=1,
         budget_ok_at=frozenset({BudgetState.HEALTHY, BudgetState.LOW, BudgetState.CRITICAL}),
     ),
@@ -65,12 +65,19 @@ _OTARI_MODELS: tuple[ModelCapability, ...] = (
                 TaskType.GENERAL,
                 TaskType.EXTRACTION,
                 TaskType.CLASSIFICATION,
+                TaskType.CREATIVE,
             }
         ),
         max_complexity=0.90,
-        strengths=("coding", "instruction following", "structured output", "math"),
+        strengths=(
+            "coding",
+            "instruction following",
+            "structured output",
+            "math",
+            "creative writing",
+        ),
         estimated_latency_ms=600,
-        cost_tier=3,
+        cost_tier=2,
         budget_ok_at=frozenset({BudgetState.HEALTHY, BudgetState.LOW}),
     ),
     ModelCapability(
@@ -89,11 +96,11 @@ _OTARI_MODELS: tuple[ModelCapability, ...] = (
         max_complexity=1.0,
         strengths=("complex reasoning", "multi-step logic", "math proofs", "chain of thought"),
         estimated_latency_ms=800,
-        cost_tier=3,
+        cost_tier=2,
         budget_ok_at=frozenset({BudgetState.HEALTHY, BudgetState.LOW}),
     ),
     ModelCapability(
-        model_id=ModelID.HERMES_4_70B,
+        model_id=ModelID.LLAMA_4_SCOUT,
         supported_tasks=frozenset(
             {
                 TaskType.CREATIVE,
@@ -101,30 +108,23 @@ _OTARI_MODELS: tuple[ModelCapability, ...] = (
                 TaskType.GENERAL,
                 TaskType.SUMMARIZATION,
                 TaskType.QA,
+                TaskType.CODING,
+                TaskType.REASONING,
             }
         ),
-        max_complexity=0.85,
-        strengths=("creative writing", "narrative", "roleplay", "long-form"),
-        estimated_latency_ms=700,
-        cost_tier=4,
-        budget_ok_at=frozenset({BudgetState.HEALTHY}),
-    ),
-    ModelCapability(
-        model_id=ModelID.QWEN3_EMBEDDING_8B,
-        supported_tasks=frozenset({TaskType.EMBEDDING}),
-        max_complexity=0.3,
-        strengths=("embedding generation", "semantic search", "vector representation"),
-        estimated_latency_ms=100,
-        cost_tier=1,
-        budget_ok_at=frozenset({BudgetState.HEALTHY, BudgetState.LOW, BudgetState.CRITICAL}),
+        max_complexity=0.80,
+        strengths=("creative writing", "conversation", "balanced", "instruction following"),
+        estimated_latency_ms=500,
+        cost_tier=2,
+        budget_ok_at=frozenset({BudgetState.HEALTHY, BudgetState.LOW}),
     ),
 )
 
 # The cheapest Otari model, used as the absolute fallback.
-_CHEAPEST_OTARI = ModelID.GEMMA_3_27B
+_CHEAPEST_OTARI = ModelID.LLAMA_3_1_8B
 
 # Default model when no analysis is available.
-_DEFAULT_MODEL = ModelID.GEMMA_3_27B
+_DEFAULT_MODEL = ModelID.LLAMA_3_1_8B
 
 
 class ModelRegistry:

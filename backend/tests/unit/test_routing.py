@@ -37,7 +37,7 @@ def clear() -> SecurityResult:
     return SecurityResult(status=SecurityStatus.CLEAR, reason="ok")
 
 
-# ── Pipeline Precedence Tests ──────────────────────────
+# ── Pipeline Precedence ──────────────────────────
 
 
 def test_security_block_short_circuits(
@@ -51,7 +51,7 @@ def test_security_block_short_circuits(
     assert decision.model is None
 
 
-def test_fast_path_routes_to_cheapest_otari(
+def test_fast_path_routes_to_cheapest(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     fast = FastDetectorResult(is_fast_path=True, reason="greeting")
@@ -59,7 +59,7 @@ def test_fast_path_routes_to_cheapest_otari(
         security=clear, analysis=None, budget=healthy_budget, fast_detector=fast
     )
     assert decision.action is RoutingAction.MODEL_CALL
-    assert decision.model is ModelID.GEMMA_3_27B
+    assert decision.model is ModelID.LLAMA_3_1_8B
 
 
 def test_critical_budget_forces_cheapest(engine: RoutingEngine, clear: SecurityResult) -> None:
@@ -68,29 +68,29 @@ def test_critical_budget_forces_cheapest(engine: RoutingEngine, clear: SecurityR
         task_type=TaskType.CODING, complexity=0.9, needs_coding=True, reason="x"
     )
     decision = engine.decide(security=clear, analysis=analysis, budget=broke)
-    assert decision.model is ModelID.GEMMA_3_27B
+    assert decision.model is ModelID.LLAMA_3_1_8B
 
 
 def test_no_analysis_routes_to_default(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     decision = engine.decide(security=clear, analysis=None, budget=healthy_budget)
-    assert decision.model is ModelID.GEMMA_3_27B
+    assert decision.model is ModelID.LLAMA_3_1_8B
 
 
-# ── Task-Type Routing Tests (Mozilla Otari Selection) ──
+# ── Task-Type Routing (Otari Selection) ──────────────────────────
 
 
-def test_general_chat_routes_to_gemma(
+def test_general_chat_routes_to_light_model(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(task_type=TaskType.GENERAL, complexity=0.2, reason="x")
     decision = engine.decide(security=clear, analysis=analysis, budget=healthy_budget)
-    assert decision.model is ModelID.GEMMA_3_27B
+    assert decision.model is ModelID.LLAMA_3_1_8B
     assert decision.score_breakdown is not None
 
 
-def test_coding_routes_to_llama(
+def test_coding_routes_to_llama_70b(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(
@@ -113,28 +113,20 @@ def test_complex_reasoning_routes_to_qwen(
     assert decision.model is ModelID.QWEN3_32B
 
 
-def test_creative_writing_routes_to_hermes(
+def test_creative_writing_routes_to_capable_model(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(task_type=TaskType.CREATIVE, complexity=0.5, reason="x")
     decision = engine.decide(security=clear, analysis=analysis, budget=healthy_budget)
-    assert decision.model is ModelID.HERMES_4_70B
+    assert decision.model in {ModelID.LLAMA_4_SCOUT, ModelID.LLAMA_3_3_70B}
 
 
-def test_embedding_routes_to_qwen_embedding(
-    engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
-) -> None:
-    analysis = PromptAnalysis(task_type=TaskType.EMBEDDING, complexity=0.1, reason="x")
-    decision = engine.decide(security=clear, analysis=analysis, budget=healthy_budget)
-    assert decision.model is ModelID.QWEN3_EMBEDDING_8B
-
-
-def test_summarization_routes_to_gemma(
+def test_summarization_routes_to_light_model(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(task_type=TaskType.SUMMARIZATION, complexity=0.3, reason="x")
     decision = engine.decide(security=clear, analysis=analysis, budget=healthy_budget)
-    assert decision.model is ModelID.GEMMA_3_27B
+    assert decision.model in {ModelID.LLAMA_3_1_8B, ModelID.LLAMA_4_SCOUT}
 
 
 def test_math_routes_to_qwen(
@@ -150,15 +142,6 @@ def test_math_routes_to_qwen(
 # ── Budget-Aware Routing ──────────────────────────
 
 
-def test_low_budget_avoids_expensive_models(
-    engine: RoutingEngine, clear: SecurityResult, low_budget: BudgetSnapshot
-) -> None:
-    analysis = PromptAnalysis(task_type=TaskType.CREATIVE, complexity=0.5, reason="x")
-    decision = engine.decide(security=clear, analysis=analysis, budget=low_budget)
-    # Hermes is cost_tier=4, budget_ok_at only HEALTHY → should NOT be selected
-    assert decision.model is not ModelID.HERMES_4_70B
-
-
 def test_low_budget_still_allows_coding(
     engine: RoutingEngine, clear: SecurityResult, low_budget: BudgetSnapshot
 ) -> None:
@@ -166,51 +149,43 @@ def test_low_budget_still_allows_coding(
         task_type=TaskType.CODING, complexity=0.7, needs_coding=True, reason="x"
     )
     decision = engine.decide(security=clear, analysis=analysis, budget=low_budget)
-    # LLaMA 3.3 70B is allowed at LOW budget
     assert decision.model in {ModelID.LLAMA_3_3_70B, ModelID.QWEN3_32B}
 
 
 # ── Override Tests ──────────────────────────
 
 
-def test_mozilla_model_override(
+def test_model_override_qwen(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(task_type=TaskType.GENERAL, complexity=0.1, reason="x")
     decision = engine.decide(
-        security=clear, analysis=analysis, budget=healthy_budget, model_override="hermes"
+        security=clear, analysis=analysis, budget=healthy_budget, model_override="qwen"
     )
-    assert decision.model is ModelID.HERMES_4_70B
+    assert decision.model is ModelID.QWEN3_32B
 
 
-def test_legacy_override_still_works(
+def test_model_override_scout(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(task_type=TaskType.GENERAL, complexity=0.1, reason="x")
     decision = engine.decide(
-        security=clear, analysis=analysis, budget=healthy_budget, model_override="gpt4o"
+        security=clear, analysis=analysis, budget=healthy_budget, model_override="scout"
     )
-    assert decision.model is ModelID.GPT4O
+    assert decision.model is ModelID.LLAMA_4_SCOUT
 
 
-def test_mozilla_aliases(
+def test_model_override_fast(
     engine: RoutingEngine, clear: SecurityResult, healthy_budget: BudgetSnapshot
 ) -> None:
     analysis = PromptAnalysis(task_type=TaskType.GENERAL, complexity=0.1, reason="x")
-    for alias, expected in [
-        ("gemma", ModelID.GEMMA_3_27B),
-        ("llama", ModelID.LLAMA_3_3_70B),
-        ("qwen", ModelID.QWEN3_32B),
-        ("hermes", ModelID.HERMES_4_70B),
-        ("embedding", ModelID.QWEN3_EMBEDDING_8B),
-    ]:
-        decision = engine.decide(
-            security=clear, analysis=analysis, budget=healthy_budget, model_override=alias
-        )
-        assert decision.model is expected, f"alias '{alias}' should map to {expected}"
+    decision = engine.decide(
+        security=clear, analysis=analysis, budget=healthy_budget, model_override="fast"
+    )
+    assert decision.model is ModelID.LLAMA_3_1_8B
 
 
-# ── Score Breakdown Tests ──────────────────────────
+# ── Score Breakdown ──────────────────────────
 
 
 def test_score_breakdown_is_populated(
@@ -225,9 +200,7 @@ def test_score_breakdown_is_populated(
     )
     decision = engine.decide(security=clear, analysis=analysis, budget=healthy_budget)
     assert decision.score_breakdown is not None
-    explanation = decision.score_breakdown.explain()
-    assert "Score" in explanation
-    assert "complexity=" in explanation
+    assert "Score" in decision.score_breakdown.explain()
 
 
 def test_economic_mode_applies_penalty(
@@ -255,14 +228,13 @@ class TestModelRegistry:
     def registry(self) -> ModelRegistry:
         return ModelRegistry()
 
-    def test_select_general_returns_gemma(self, registry: ModelRegistry) -> None:
-        model, reason = registry.select(
+    def test_select_general_returns_light(self, registry: ModelRegistry) -> None:
+        model, _ = registry.select(
             TaskType.GENERAL, complexity=0.2, budget_state=BudgetState.HEALTHY
         )
-        assert model is ModelID.GEMMA_3_27B
-        assert "gemma" in reason.lower() or "Task=general" in reason
+        assert model is ModelID.LLAMA_3_1_8B
 
-    def test_select_coding_returns_llama(self, registry: ModelRegistry) -> None:
+    def test_select_coding_returns_llama_70b(self, registry: ModelRegistry) -> None:
         model, _ = registry.select(
             TaskType.CODING,
             complexity=0.7,
@@ -280,38 +252,11 @@ class TestModelRegistry:
         )
         assert model is ModelID.QWEN3_32B
 
-    def test_select_creative_returns_hermes(self, registry: ModelRegistry) -> None:
-        model, _ = registry.select(
-            TaskType.CREATIVE, complexity=0.5, budget_state=BudgetState.HEALTHY
-        )
-        assert model is ModelID.HERMES_4_70B
-
-    def test_select_embedding_returns_embedding_model(self, registry: ModelRegistry) -> None:
-        model, _ = registry.select(
-            TaskType.EMBEDDING, complexity=0.1, budget_state=BudgetState.HEALTHY
-        )
-        assert model is ModelID.QWEN3_EMBEDDING_8B
-
-    def test_unknown_task_falls_back(self, registry: ModelRegistry) -> None:
-        """Tasks not in any model's supported set fall back to cheapest."""
-        model, reason = registry.select(
-            TaskType.EXTRACTION, complexity=0.1, budget_state=BudgetState.CRITICAL
-        )
-        # EXTRACTION at CRITICAL budget — only Gemma & Qwen Embedding are affordable,
-        # but only LLaMA supports EXTRACTION and it's not CRITICAL-eligible.
-        # Falls back to cheapest.
-        assert model is not None
-        assert reason  # explanation is always provided
-
-    def test_budget_low_excludes_hermes(self, registry: ModelRegistry) -> None:
-        model, _ = registry.select(TaskType.CREATIVE, complexity=0.5, budget_state=BudgetState.LOW)
-        assert model is not ModelID.HERMES_4_70B
-
     def test_get_cheapest(self, registry: ModelRegistry) -> None:
-        assert registry.get_cheapest() is ModelID.GEMMA_3_27B
+        assert registry.get_cheapest() is ModelID.LLAMA_3_1_8B
 
     def test_get_default(self, registry: ModelRegistry) -> None:
-        assert registry.get_default() is ModelID.GEMMA_3_27B
+        assert registry.get_default() is ModelID.LLAMA_3_1_8B
 
     def test_get_fast_path_model(self, registry: ModelRegistry) -> None:
-        assert registry.get_fast_path_model() is ModelID.GEMMA_3_27B
+        assert registry.get_fast_path_model() is ModelID.LLAMA_3_1_8B

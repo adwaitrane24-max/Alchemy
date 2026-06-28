@@ -208,30 +208,21 @@ class RoutingEngine:
     @staticmethod
     def _coerce_model(value: str) -> ModelID | None:
         aliases = {
-            # Mozilla Otari
-            "gemma": ModelID.GEMMA_3_27B,
-            "gemma_27b": ModelID.GEMMA_3_27B,
-            "gemma-3-27b": ModelID.GEMMA_3_27B,
+            # Otari models (via Groq backend)
             "llama": ModelID.LLAMA_3_3_70B,
             "llama_70b": ModelID.LLAMA_3_3_70B,
             "llama-3.3-70b": ModelID.LLAMA_3_3_70B,
+            "llama_8b": ModelID.LLAMA_3_1_8B,
+            "llama-3.1-8b": ModelID.LLAMA_3_1_8B,
+            "fast": ModelID.LLAMA_3_1_8B,
             "qwen": ModelID.QWEN3_32B,
             "qwen_32b": ModelID.QWEN3_32B,
             "qwen3-32b": ModelID.QWEN3_32B,
-            "hermes": ModelID.HERMES_4_70B,
-            "hermes_70b": ModelID.HERMES_4_70B,
-            "hermes-4-70b": ModelID.HERMES_4_70B,
-            "qwen_embedding": ModelID.QWEN3_EMBEDDING_8B,
-            "embedding": ModelID.QWEN3_EMBEDDING_8B,
-            # Groq (budget fallback)
-            "groq_13b": ModelID.GROQ_LLAMA2_13B,
-            "groq_mixtral": ModelID.GROQ_MIXTRAL,
-            "groq_70b": ModelID.GROQ_LLAMA2_70B,
-            "mixtral": ModelID.GROQ_MIXTRAL,
-            "llama2_13b": ModelID.GROQ_LLAMA2_13B,
-            "llama2_70b": ModelID.GROQ_LLAMA2_70B,
+            "scout": ModelID.LLAMA_4_SCOUT,
+            "llama4": ModelID.LLAMA_4_SCOUT,
+            "llama-4-scout": ModelID.LLAMA_4_SCOUT,
             # Legacy
-            "local": ModelID.GEMMA_3_27B,
+            "local": ModelID.LLAMA_3_1_8B,
             "local_2b": ModelID.LOCAL_2B,
             "mini": ModelID.GPT4O_MINI,
             "gpt4o_mini": ModelID.GPT4O_MINI,

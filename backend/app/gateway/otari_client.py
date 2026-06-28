@@ -36,7 +36,10 @@ class OtariGateway:
         self._fallback = fallback or MockResponseEngine()
 
         base = self._settings.otari_base_url.rstrip("/")
-        self._endpoint = f"{base}/v1/chat/completions"
+        if base.endswith("/v1"):
+            self._endpoint = f"{base}/chat/completions"
+        else:
+            self._endpoint = f"{base}/v1/chat/completions"
         self._timeout = self._settings.otari_timeout_ms / 1000.0
         self._headers = {
             "Authorization": f"Bearer {self._settings.otari_api_key}",

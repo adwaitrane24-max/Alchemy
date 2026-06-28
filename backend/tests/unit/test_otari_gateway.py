@@ -77,10 +77,10 @@ class TestOtariGateway:
             mock_response.json.return_value = api_response
             mock_response.raise_for_status.return_value = None
 
-            result = gateway.generate(prompt_request, ModelID.GEMMA_3_27B)
+            result = gateway.generate(prompt_request, ModelID.LLAMA_3_1_8B)
 
         assert result.text == "Binary search is a divide-and-conquer algorithm."
-        assert result.model is ModelID.GEMMA_3_27B
+        assert result.model is ModelID.LLAMA_3_1_8B
         assert result.prompt_tokens == 12
         assert result.completion_tokens == 25
         assert result.latency_ms > 0
@@ -96,10 +96,10 @@ class TestOtariGateway:
                 httpx.TimeoutException("timed out")
             )
 
-            result = gateway.generate(prompt_request, ModelID.GEMMA_3_27B)
+            result = gateway.generate(prompt_request, ModelID.LLAMA_3_1_8B)
 
         assert result.text  # mock produces text
-        assert result.model is ModelID.GEMMA_3_27B
+        assert result.model is ModelID.LLAMA_3_1_8B
 
     def test_api_http_error_falls_back_to_mock(
         self, gateway: OtariGateway, prompt_request: PromptRequest
@@ -184,7 +184,7 @@ class TestOtariGateway:
         with patch("backend.app.gateway.otari_client.httpx.Client") as mock_client_cls:
             mock_client_cls.return_value.__enter__.return_value.post = capture_post
 
-            gateway.generate(prompt_request, ModelID.GEMMA_3_27B)
+            gateway.generate(prompt_request, ModelID.LLAMA_3_1_8B)
 
         user_msg = captured_payload["messages"][1]["content"]
         assert user_msg == "Explain binary search in Python"
@@ -204,11 +204,10 @@ class TestOtariGateway:
             mock_response.json.return_value = api_response
             mock_response.raise_for_status.return_value = None
 
-            result = gateway.generate(prompt_request, ModelID.GEMMA_3_27B)
+            result = gateway.generate(prompt_request, ModelID.LLAMA_3_1_8B)
 
-        # GEMMA_3_27B: input=0.00010, output=0.00020 per 1K
-        # 1000 tokens each → 0.00010 + 0.00020 = 0.0003
-        assert result.cost_usd == pytest.approx(0.0003, abs=0.0001)
+        # LLAMA_3_1_8B is free through Groq/Otari (cost=0.0)
+        assert result.cost_usd == 0.0
 
 
 # ── Mock Engine Interface Parity ──────────────────────────
@@ -218,6 +217,6 @@ def test_mock_engine_accepts_context_text() -> None:
     """MockResponseEngine.generate() accepts context_text without error."""
     engine = MockResponseEngine(seed=42)
     request = PromptRequest(prompt="Hello world")
-    result = engine.generate(request, ModelID.GEMMA_3_27B, context_text="some context")
+    result = engine.generate(request, ModelID.LLAMA_3_1_8B, context_text="some context")
     assert result.text
-    assert result.model is ModelID.GEMMA_3_27B
+    assert result.model is ModelID.LLAMA_3_1_8B
