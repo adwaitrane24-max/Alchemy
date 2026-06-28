@@ -59,16 +59,27 @@ def main(ctx: typer.Context) -> None:
 
 @app.command()
 def chat(
-    voice: bool = typer.Option(False, "--voice", "-v", help="Enable voice input (later milestone)"),
+    voice: bool = typer.Option(False, "--voice", "-v", help="Start in voice input mode"),
     model: str | None = typer.Option(
         None, "--model", "-m", help="Override model selection [local|mini|gpt4o]"
     ),
 ) -> None:
     """Start an interactive chat session with Alchemy."""
-    if voice:
-        _console.print("[yellow]Voice input is not available yet; using text input.[/yellow]")
     _init_logging()
-    InteractiveSession(console=_console).run(model_override=model)
+    session = InteractiveSession(console=_console)
+    if voice:
+        from backend.app.voice.voice_manager import VoiceManager
+
+        vm = VoiceManager()
+        ready, reason = vm.check_readiness()
+        if ready:
+            session._voice_mode = True
+            _console.print("[green]Voice input enabled via --voice flag.[/green]\n")
+        else:
+            _console.print(
+                f"[yellow]Voice unavailable: {reason}. Using keyboard input.[/yellow]\n"
+            )
+    session.run(model_override=model)
 
 
 @app.command()

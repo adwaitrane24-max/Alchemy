@@ -60,7 +60,7 @@ def test_interactive_session_runs_and_exits() -> None:
     session = InteractiveSession(console=console, pipeline=AlchemyPipeline())
 
     # Rich's Prompt.ask reads via console.input; feed scripted lines.
-    lines = iter(["hello", "exit"])
+    lines = iter(["1", "hello", "exit"])
     console.input = lambda *args, **kwargs: next(lines)  # type: ignore[method-assign]
 
     session.run(model_override="local")

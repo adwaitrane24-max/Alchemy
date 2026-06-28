@@ -22,6 +22,8 @@ from backend.app.models.request import PromptRequest
 from backend.app.pricing import PricingCache, PricingService, ProviderRegistry
 from backend.app.services import AlchemyPipeline
 from backend.app.usage import UsageCollector, UsageService
+from backend.app.voice.exceptions import VoiceError
+from backend.app.voice.voice_manager import VoiceManager
 from frontend.dashboard import Dashboard
 from frontend.ui import render_banner
 
@@ -70,6 +72,10 @@ class InteractiveSession:
         # Track manual override for current request
         self._current_model_override: str | None = None
 
+        # Voice input
+        self._voice_manager = VoiceManager(settings=self._settings)
+        self._voice_mode = False
+
     def _budget_snapshot(self) -> BudgetSnapshot:
         """Return budget snapshot from actual session budget manager."""
         return BudgetSnapshot(
@@ -94,6 +100,26 @@ class InteractiveSession:
         )
         return next(m for m in _MODES if m.key == choice)
 
+    def _select_input_mode(self) -> str:
+        """Prompt the user to choose keyboard or voice input."""
+        table = Text()
+        table.append("  [1] ", style="bold cyan")
+        table.append("Keyboard\n")
+        table.append("  [2] ", style="bold cyan")
+        table.append("Voice\n")
+        table.append("  [3] ", style="bold cyan")
+        table.append("Exit\n")
+        self._console.print(
+            Panel(table, title="[bold]Select Input Mode[/bold]", border_style="cyan")
+        )
+        choice = Prompt.ask(
+            "[bold magenta]Input[/bold magenta]",
+            choices=["1", "2", "3"],
+            default="1",
+            console=self._console,
+        )
+        return choice
+
     def run(self, model_override: str | None = None) -> None:
         """Run the interactive loop until the user exits.
 
@@ -102,6 +128,23 @@ class InteractiveSession:
                 model alias (``local`` | ``mini`` | ``gpt4o``) for the session.
         """
         render_banner(self._console)
+
+        # Input mode selection
+        input_choice = self._select_input_mode()
+        if input_choice == "3":
+            self._console.print("[dim]Goodbye![/dim]")
+            return
+        if input_choice == "2":
+            ready, reason = self._voice_manager.check_readiness()
+            if ready:
+                self._voice_mode = True
+                self._console.print("[green]Voice input enabled.[/green]\n")
+            else:
+                self._console.print(
+                    f"[yellow]Voice unavailable: {reason}. Falling back to keyboard.[/yellow]\n"
+                )
+                self._voice_mode = False
+
         if model_override is not None:
             mode = Mode("override", f"Forced: {model_override}", model_override)
         else:
@@ -113,14 +156,16 @@ class InteractiveSession:
         self._dashboard.render_placeholder(self._budget_snapshot())
 
         while True:
-            try:
-                user_input = Prompt.ask("[bold green]you[/bold green]", console=self._console)
-            except (EOFError, KeyboardInterrupt):
-                self._console.print("\n[dim]Session ended.[/dim]")
-                return
+            if self._voice_mode:
+                user_input = self._voice_input_loop()
+            else:
+                user_input = self._keyboard_input()
+
+            if user_input is None:
+                continue
 
             if user_input.strip().lower() in _EXIT_WORDS:
-                self._console.print("[dim]Goodbye! 👋[/dim]")
+                self._console.print("[dim]Goodbye![/dim]")
                 return
             if not user_input.strip():
                 continue
@@ -130,7 +175,75 @@ class InteractiveSession:
                 self._handle_model_command(user_input.strip())
                 continue
 
+            # Check for :voice / :keyboard toggle
+            if user_input.strip() == ":voice":
+                ready, reason = self._voice_manager.check_readiness()
+                if ready:
+                    self._voice_mode = True
+                    self._console.print("[green]Switched to voice input.[/green]")
+                else:
+                    self._console.print(f"[yellow]Voice unavailable: {reason}[/yellow]")
+                continue
+            if user_input.strip() == ":keyboard":
+                self._voice_mode = False
+                self._console.print("[green]Switched to keyboard input.[/green]")
+                continue
+
             self._handle(user_input, mode)
+
+    def _keyboard_input(self) -> str | None:
+        """Read one line from the keyboard."""
+        try:
+            return Prompt.ask("[bold green]you[/bold green]", console=self._console)
+        except (EOFError, KeyboardInterrupt):
+            self._console.print("\n[dim]Session ended.[/dim]")
+            return "exit"
+
+    def _voice_input_loop(self) -> str | None:
+        """Record, transcribe, and confirm a voice input."""
+        try:
+            self._console.print()
+            result = self._voice_manager.record_and_transcribe(
+                on_listening=lambda: self._console.print(
+                    "[bold yellow]🎤 Listening...[/bold yellow] (speak now, silence to stop)"
+                ),
+            )
+        except VoiceError as exc:
+            self._console.print(f"[red]Voice error: {exc}[/red]")
+            self._console.print("[yellow]Falling back to keyboard for this prompt.[/yellow]")
+            return self._keyboard_input()
+
+        self._console.print("[dim]🧠 Converting speech to text...[/dim]")
+        self._console.print()
+        self._console.print(
+            Panel(
+                Text(result.text),
+                title="[bold]Recognized Text[/bold]",
+                border_style="cyan",
+                padding=(0, 2),
+            )
+        )
+
+        action = Prompt.ask(
+            "[bold][Y][/bold] Send  [bold][R][/bold] Record Again  "
+            "[bold][E][/bold] Edit  [bold][C][/bold] Cancel",
+            choices=["Y", "R", "E", "C", "y", "r", "e", "c"],
+            default="Y",
+            console=self._console,
+        ).upper()
+
+        if action == "Y":
+            return result.text
+        if action == "R":
+            return self._voice_input_loop()
+        if action == "E":
+            edited = Prompt.ask(
+                "[bold green]edit[/bold green]",
+                default=result.text,
+                console=self._console,
+            )
+            return edited
+        return None
 
     def _handle_model_command(self, command: str) -> None:
         """Handle :model command for model selection."""
