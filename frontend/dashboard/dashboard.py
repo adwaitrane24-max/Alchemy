@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from backend.app.constants.enums import BudgetState, SecurityStatus
+from backend.app.constants.enums import BudgetState, SecurityStatus, ThreatType
 from backend.app.models.budget import BudgetSnapshot
 from backend.app.models.response import PromptResponse
 
@@ -44,8 +44,11 @@ def _security_text(response: PromptResponse) -> Text:
     if response.security is None:
         return Text(_PLACEHOLDER, style="dim")
     if response.security.status is SecurityStatus.BLOCK:
-        threats = ", ".join(t.value for t in response.security.threats) or "threat"
-        return Text(f"BLOCK ({threats})", style="bold red")
+        threats = response.security.threats
+        has_harmful = any(t is ThreatType.HARMFUL_CONTENT for t in threats)
+        label = "RISK" if has_harmful else "BLOCK"
+        threat_names = ", ".join(t.value for t in threats) or "threat"
+        return Text(f"{label} ({threat_names})", style="bold red")
     return Text("CLEAR", style="green")
 
 

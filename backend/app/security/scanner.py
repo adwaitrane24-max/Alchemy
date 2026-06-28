@@ -111,6 +111,110 @@ _RULES: tuple[_Rule, ...] = (
         r"\brepeat\s+(?:everything\s+)?(?:above|the\s+text\s+above)\b",
         "Context dump request",
     ),
+    # ── Harmful content: weapons & explosives ──
+    _rule(
+        "HARM-001",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how\s+to|ways?\s+to|steps?\s+to|guide\s+(?:to|for|on)|explain(?:\s+(?:how|in\s+detail))?|teach\s+(?:me|us)?|tell\s+(?:me|us)?\s+how|instructions?\s+(?:to|for|on))\s+)?(?:make|build|create|construct|assemble|manufacture|craft|produce|synthesize)\s+(?:a\s+)?(?:deadly\s+|lethal\s+|powerful\s+|homemade\s+|improvised\s+)?(?:bomb|explosive|grenade|landmine|ied|detonator|dynamite|c4|molotov|pipe\s*bomb|nail\s*bomb|car\s*bomb|suicide\s*vest|weapon\s*of\s*mass\s*destruction)\b",
+        "Weapon/explosive creation instructions",
+    ),
+    _rule(
+        "HARM-001b",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:bomb|explosive|grenade|landmine|ied|detonator|dynamite|c4|molotov|pipe\s*bomb|nail\s*bomb|car\s*bomb|suicide\s*vest)\s+(?:making|building|creation|construction|recipe|tutorial|instructions?|guide|blueprint|schematic)\b",
+        "Weapon/explosive creation (reversed phrasing)",
+    ),
+    _rule(
+        "HARM-002",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?|guide|explain|teach|instructions?)\s+(?:to\s+|for\s+|on\s+)?)?(?:make|build|create|buy|obtain|get|acquire|purchase|synthesize|cook|produce|3d\s*print)\s+(?:a\s+)?(?:illegal\s+|homemade\s+|improvised\s+|untraceable\s+)?(?:gun|firearm|pistol|rifle|assault\s*weapon|machine\s*gun|shotgun|silencer|suppressor|3d\s*printed\s*gun|ghost\s*gun|zip\s*gun)\b",
+        "Firearm creation/acquisition instructions",
+    ),
+    _rule(
+        "HARM-003",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?|guide|explain|teach|instructions?)\s+(?:to\s+|for\s+|on\s+)?)?(?:make|create|synthesize|cook|produce|brew|manufacture)\s+(?:a\s+)?(?:deadly\s+|lethal\s+|homemade\s+)?(?:poison|toxic\s*(?:gas|substance|chemical)|nerve\s*(?:agent|gas)|ricin|cyanide|sarin|anthrax|mustard\s*gas|chlorine\s*gas|vx\s*gas)\b",
+        "Poison/chemical weapon synthesis",
+    ),
+    # ── Harmful content: drugs ──
+    _rule(
+        "HARM-004",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?|guide|explain|teach|instructions?)\s+(?:to\s+|for\s+|on\s+)?)?(?:make|cook|synthesize|produce|manufacture|brew|create)\s+(?:a\s+)?(?:meth|methamphetamine|crystal\s*meth|cocaine|crack|heroin|fentanyl|lsd|mdma|ecstasy|dmt|ghb|ketamine|pcp)\b",
+        "Illegal drug manufacturing",
+    ),
+    # ── Harmful content: violence & harm ──
+    _rule(
+        "HARM-005",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?|best\s+way|methods?)\s+(?:to\s+)?)?(?:kill|murder|assassinate|eliminate|execute|strangle|suffocate|poison)\s+(?:a\s+)?(?:person|someone|people|human|man|woman|child|kid|infant|baby|neighbor|neighbour|colleague|boss|teacher|classmate|spouse|partner|friend|family)\b",
+        "Violence against persons",
+    ),
+    _rule(
+        "HARM-006",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?)\s+(?:to\s+)?)?(?:kidnap|abduct|traffic|torture|dismember|mutilate)\s+(?:a\s+)?(?:person|someone|people|child|kid|woman|man|victim)\b",
+        "Kidnapping/torture instructions",
+    ),
+    _rule(
+        "HARM-006b",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?)\s+(?:to\s+)?)?(?:kidnap|abduct|torture|dismember|mutilate)\b.*\b(?:without\s+(?:getting\s+caught|being\s+(?:caught|detected|found|noticed|traced)))\b",
+        "Evasion of law enforcement",
+    ),
+    _rule(
+        "HARM-007",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:(?:how|ways?|steps?|plan|guide)\s+(?:to\s+|for\s+)?)?(?:commit|plan|carry\s*out|execute|organize|stage)\s+(?:a\s+)?(?:mass\s*shooting|school\s*shooting|terrorist?\s*attack|bombing|genocide|massacre|arson|hate\s*crime)\b",
+        "Terrorism/mass violence planning",
+    ),
+    # ── Harmful content: hacking & cybercrime ──
+    _rule(
+        "HARM-008",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:how\s+to\s+)?(?:hack\s+into|break\s+into|crack|exploit|breach)\s+(?:a\s+)?(?:bank|government|military|hospital|school|company|someone'?s?\s+(?:account|email|phone|computer|social\s*media))\b",
+        "Unauthorized system access",
+    ),
+    _rule(
+        "HARM-009",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:how\s+to\s+)?(?:create|write|build|deploy|spread)\s+(?:a\s+)?(?:ransomware|malware|virus|trojan|worm|keylogger|spyware|rootkit|botnet|rat\s+(?:tool|software))\b",
+        "Malware creation",
+    ),
+    # ── Harmful content: self-harm ──
+    _rule(
+        "HARM-010",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:how\s+to\s+)?(?:commit\s+suicide|kill\s+(?:myself|yourself)|end\s+(?:my|your)\s+life|painless\s+(?:way|method)\s+to\s+die|best\s+way\s+to\s+die)\b",
+        "Self-harm/suicide instructions",
+    ),
+    # ── Harmful content: CSAM & exploitation ──
+    _rule(
+        "HARM-011",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:child\s+(?:porn|pornography|exploitation|abuse\s+(?:material|image|video))|csam|underage\s+(?:sex|porn|nude)|minor\s+(?:sex|porn|nude))\b",
+        "Child exploitation material",
+    ),
+    # ── Harmful content: fraud & identity theft ──
+    _rule(
+        "HARM-012",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:how\s+to\s+)?(?:forge|fake|counterfeit|falsify)\s+(?:a\s+)?(?:passport|id|identity|license|document|money|currency|diploma|certificate|prescription)\b",
+        "Document forgery/counterfeiting",
+    ),
+    _rule(
+        "HARM-013",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:how\s+to\s+)?(?:steal|clone|skim)\s+(?:a\s+)?(?:credit\s*card|debit\s*card|identity|someone'?s?\s+identity)\b",
+        "Identity theft/card fraud",
+    ),
+    # ── Harmful content: human trafficking ──
+    _rule(
+        "HARM-014",
+        ThreatType.HARMFUL_CONTENT,
+        r"\b(?:how\s+to\s+)?(?:traffic|smuggle|sell)\s+(?:a\s+)?(?:person|people|human|organ|slave|child|children|women|girls|boys)\b",
+        "Human trafficking",
+    ),
 )
 
 

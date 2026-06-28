@@ -28,6 +28,7 @@ class ThreatType(StrEnum):
     LEAKAGE = "leakage"
     ROLE_OVERRIDE = "role_override"
     EXFILTRATION = "exfiltration"
+    HARMFUL_CONTENT = "harmful_content"
 
 
 class TaskType(StrEnum):
