@@ -1,8 +1,9 @@
-"""Voice input — Smallest.ai STT integration."""
+"""Voice input — Smallest.ai STT integration.
 
-from backend.app.voice.voice_manager import VoiceManager
-from backend.app.voice.audio_recorder import AudioRecorder, RecordingResult
-from backend.app.voice.speech_to_text import SmallestSTTClient, TranscriptionResult
+Heavy dependencies (numpy, sounddevice) are imported lazily so the CLI
+starts even when they are not installed.
+"""
+
 from backend.app.voice.exceptions import (
     VoiceError,
     MicrophoneUnavailableError,
@@ -23,3 +24,22 @@ __all__ = [
     "TranscriptionError",
     "TranscriptionTimeoutError",
 ]
+
+
+def __getattr__(name: str):
+    if name == "VoiceManager":
+        from backend.app.voice.voice_manager import VoiceManager
+        return VoiceManager
+    if name == "AudioRecorder":
+        from backend.app.voice.audio_recorder import AudioRecorder
+        return AudioRecorder
+    if name == "RecordingResult":
+        from backend.app.voice.audio_recorder import RecordingResult
+        return RecordingResult
+    if name == "SmallestSTTClient":
+        from backend.app.voice.speech_to_text import SmallestSTTClient
+        return SmallestSTTClient
+    if name == "TranscriptionResult":
+        from backend.app.voice.speech_to_text import TranscriptionResult
+        return TranscriptionResult
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

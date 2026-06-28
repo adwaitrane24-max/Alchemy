@@ -48,7 +48,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma:2b"
 
-    # ── Smallest.ai (Voice STT) ─────────────────
+    # ── Groq (Whisper STT for voice) ──────────────
+    groq_api_key: str = ""
+
+    # ── Smallest.ai (Voice STT, legacy) ─────────
     smallest_ai_api_key: str = ""
     smallest_ai_base_url: str = ""
 

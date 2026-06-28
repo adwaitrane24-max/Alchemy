@@ -32,7 +32,7 @@ class VoiceManager:
     def check_readiness(self) -> tuple[bool, str]:
         """Return (ready, reason) for the voice subsystem."""
         if not self._stt.is_configured:
-            return False, "Smallest.ai credentials not configured (SMALLEST_AI_API_KEY / SMALLEST_AI_BASE_URL)"
+            return False, "Smallest.ai not configured (set SMALLEST_AI_API_KEY in .env)"
         if not self._recorder.check_microphone():
             return False, "No microphone detected"
         return True, "Voice input ready"

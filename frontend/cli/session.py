@@ -24,7 +24,6 @@ from backend.app.pricing import PricingCache, PricingService, ProviderRegistry
 from backend.app.services import AlchemyPipeline
 from backend.app.usage import UsageCollector, UsageService
 from backend.app.voice.exceptions import VoiceError
-from backend.app.voice.voice_manager import VoiceManager
 from frontend.dashboard import Dashboard
 from frontend.dashboard.dashboard import animate_model_selection, animate_pipeline
 from frontend.ui import render_banner, render_status_bar
@@ -70,8 +69,15 @@ class InteractiveSession:
         self._usage_collector = UsageCollector()
 
         self._current_model_override: str | None = None
-        self._voice_manager = VoiceManager(settings=self._settings)
+        self._voice_manager = self._create_voice_manager()
         self._voice_mode = False
+
+    def _create_voice_manager(self):
+        try:
+            from backend.app.voice.voice_manager import VoiceManager
+            return VoiceManager(settings=self._settings)
+        except ImportError:
+            return None
 
     def _budget_snapshot(self) -> BudgetSnapshot:
         return BudgetSnapshot(
@@ -124,7 +130,7 @@ class InteractiveSession:
             self._console.print(f"[{DIM}]Goodbye![/{DIM}]")
             return
         if input_choice == "2":
-            ready, reason = self._voice_manager.check_readiness()
+            ready, reason = self._voice_manager.check_readiness() if self._voice_manager else (False, "Voice dependencies not installed (numpy, sounddevice)")
             if ready:
                 self._voice_mode = True
                 self._console.print(f"[{GREEN}]✓ Voice input enabled.[/{GREEN}]\n")
@@ -139,7 +145,7 @@ class InteractiveSession:
         else:
             mode = self._select_mode()
 
-        voice_ready = self._voice_manager.check_readiness()[0]
+        voice_ready = self._voice_manager.check_readiness()[0] if self._voice_manager else False
         budget_state = self._budget_snapshot().state.value
         model_label = mode.label if mode.model_override else "Auto"
         render_status_bar(
@@ -175,7 +181,7 @@ class InteractiveSession:
                 self._handle_model_command(user_input.strip())
                 continue
             if user_input.strip() == ":voice":
-                ready, reason = self._voice_manager.check_readiness()
+                ready, reason = self._voice_manager.check_readiness() if self._voice_manager else (False, "Voice dependencies not installed (numpy, sounddevice)")
                 if ready:
                     self._voice_mode = True
                     self._console.print(f"[{GREEN}]✓ Switched to voice input.[/{GREEN}]")
@@ -201,7 +207,7 @@ class InteractiveSession:
             self._console.print()
             result = self._voice_manager.record_and_transcribe(
                 on_listening=lambda: self._console.print(
-                    f"[bold {YELLOW}]🎤 Listening...[/bold {YELLOW}] [dim](speak now, silence to stop)[/dim]"
+                    f"[bold {YELLOW}]🎤 Listening...[/bold {YELLOW}] [dim](speak now — press Enter or pause to stop)[/dim]"
                 ),
             )
         except VoiceError as exc:

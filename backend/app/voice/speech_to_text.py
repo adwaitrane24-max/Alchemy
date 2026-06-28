@@ -1,4 +1,4 @@
-"""Smallest.ai Speech-to-Text client."""
+"""Smallest.ai Pulse Speech-to-Text client."""
 
 from __future__ import annotations
 
@@ -23,60 +23,47 @@ class TranscriptionResult:
 
 
 class SmallestSTTClient:
-    """Sends audio to Smallest.ai and returns the transcript."""
+    """Sends audio to Smallest.ai Pulse for transcription.
+
+    The API expects raw audio bytes with Content-Type: application/octet-stream.
+    All configuration (model, language) is passed as query parameters.
+    """
 
     def __init__(self, *, settings: Settings | None = None) -> None:
         self._settings = settings or get_settings()
-        base = self._settings.smallest_ai_base_url.rstrip("/")
-        self._endpoint = f"{base}/api/v1/transcribe" if base else ""
         self._api_key = self._settings.smallest_ai_api_key
+        self._endpoint = "https://api.smallest.ai/waves/v1/stt/"
         self._timeout = _DEFAULT_TIMEOUT_SECONDS
 
     @property
     def is_configured(self) -> bool:
-        return bool(self._api_key and self._endpoint)
+        return bool(self._api_key)
 
     def transcribe(self, audio_path: Path, audio_duration: float = 0.0) -> TranscriptionResult:
-        """Upload an audio file and return the transcript.
-
-        Args:
-            audio_path: Path to the WAV file.
-            audio_duration: Duration of the audio in seconds (for logging).
-
-        Returns:
-            A TranscriptionResult with the transcript text.
-
-        Raises:
-            TranscriptionError: API returned an error or empty transcript.
-            TranscriptionTimeoutError: API did not respond in time.
-        """
         if not self.is_configured:
             raise TranscriptionError(
-                "Smallest.ai is not configured — set SMALLEST_AI_API_KEY and SMALLEST_AI_BASE_URL"
+                "Smallest.ai not configured — set SMALLEST_AI_API_KEY in .env"
             )
 
-        logger.info(
-            "Uploading audio path={} duration={:.2f}s",
-            audio_path,
-            audio_duration,
-        )
-
-        headers = {"Authorization": f"Bearer {self._api_key}"}
+        logger.info("Uploading audio to Smallest.ai Pulse path={} duration={:.2f}s", audio_path, audio_duration)
         start = time.perf_counter()
 
         try:
-            with open(audio_path, "rb") as f:
-                files = {"file": (audio_path.name, f, "audio/wav")}
-                data = {"language": "en", "model": "whisper-v2"}
-                logger.debug("STT request sent endpoint={}", self._endpoint)
+            audio_bytes = audio_path.read_bytes()
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/octet-stream",
+            }
+            params = {"model": "pulse", "language": "en"}
+            logger.debug("STT request sent endpoint={} size_bytes={}", self._endpoint, len(audio_bytes))
 
-                response = httpx.post(
-                    self._endpoint,
-                    headers=headers,
-                    files=files,
-                    data=data,
-                    timeout=self._timeout,
-                )
+            response = httpx.post(
+                self._endpoint,
+                headers=headers,
+                params=params,
+                content=audio_bytes,
+                timeout=self._timeout,
+            )
         except httpx.TimeoutException as exc:
             latency = (time.perf_counter() - start) * 1000
             logger.error("STT request timed out after {:.0f}ms", latency)
@@ -87,11 +74,11 @@ class SmallestSTTClient:
             raise TranscriptionError(f"Network error: {exc}") from exc
 
         latency = round((time.perf_counter() - start) * 1000, 2)
-        logger.info("STT response received status={} latency={:.2f}ms", response.status_code, latency)
+        logger.info("STT response status={} latency={:.2f}ms", response.status_code, latency)
 
         if response.status_code != 200:
             raise TranscriptionError(
-                f"Smallest.ai returned HTTP {response.status_code}: {response.text[:200]}"
+                f"Smallest.ai returned HTTP {response.status_code}: {response.text[:300]}"
             )
 
         try:
@@ -99,24 +86,31 @@ class SmallestSTTClient:
         except Exception as exc:
             raise TranscriptionError(f"Invalid JSON response: {exc}") from exc
 
+        logger.debug("STT raw response body={}", body)
+
         text = ""
-        if isinstance(body, dict):
-            text = body.get("text", "") or body.get("transcript", "") or ""
         if isinstance(body, str):
             text = body
+        elif isinstance(body, dict):
+            text = (
+                body.get("text")
+                or body.get("transcript")
+                or body.get("transcription")
+                or body.get("result")
+                or ""
+            )
+            if not text and isinstance(body.get("data"), dict):
+                text = body["data"].get("text") or body["data"].get("transcript") or ""
+            if not text and isinstance(body.get("results"), list) and body["results"]:
+                first = body["results"][0]
+                if isinstance(first, dict):
+                    text = first.get("text") or first.get("transcript") or ""
+        if not isinstance(text, str):
+            text = str(text)
 
         text = text.strip()
         if not text:
-            raise TranscriptionError("Smallest.ai returned an empty transcript")
+            raise TranscriptionError(f"Smallest.ai returned an empty transcript (body={body})")
 
-        logger.info(
-            "Transcription successful length={} latency={:.2f}ms",
-            len(text),
-            latency,
-        )
-
-        return TranscriptionResult(
-            text=text,
-            latency_ms=latency,
-            audio_duration_seconds=audio_duration,
-        )
+        logger.info("Transcription successful length={} latency={:.2f}ms", len(text), latency)
+        return TranscriptionResult(text=text, latency_ms=latency, audio_duration_seconds=audio_duration)
